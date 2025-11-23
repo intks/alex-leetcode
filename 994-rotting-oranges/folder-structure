@@ -1,0 +1,217 @@
+## Feature-Based Architecture — Phase 1
+
+### 1. 現況問題
+
+目前專案採用 **Tech-Based 目錄結構（components / hooks / services） + pages 下堆疊子功能 Folder** 的混合模式。
+
+此架構初期易於上手，但隨著功能數量與複雜度增加，以下問題會日益明顯：
+
+- Feature 邏輯分散於多處，追蹤成本高
+- 新人需理解整個技術層次（components/hooks/services…）才能定位程式碼
+- 功能間依賴模糊，易產生耦合
+- 功能無明確邊界，難以抽離、重寫或替換
+
+以 `xxx` 為例：
+
+```
+pages
+ └─ xxx
+     ├─ components
+     │   ├─ xxx
+     │   │   ├─ components
+     │   │   │   └─ xxx.tsx
+     │   │   └─ xxx.tsx
+     │   ├─ xxx
+     │   │   ├─ components
+     │   │   │   └─ xxx.tsx
+     │   │   └─ xxx.tsx
+     │   ├─ xxx.tsx
+     │   └─ xxx.tsx
+     └─ xxx.tsx
+
+```
+
+- `xxx` 是完整 feature 卻放在 pages
+- sub-feature (xxx / xxx) 各自堆疊 inner components
+- services / types / hooks 分散在 pages 外，分散關注點
+
+---
+
+### 2. 為什麼要改成 Feature-Based 結構
+
+| **Pros** | **Cons** |
+| --- | --- |
+| 功能邏輯集中、維護與搜尋成本低 | 初期需投入時間設計與制定規範 |
+| 新人上手快速：理解 feature 即可開發 | 舊架構需花時間抽離與整理 |
+| Feature 與 Feature 之間耦合降低 | 過渡期會出現混合結構 |
+| Feature 可獨立替換、重寫、測試 | - |
+| 更貼近產品功能與 Domain 對應 | - |
+
+---
+
+### 3. Feature 拆分的例子
+
+先以比較小的 `xxx` 來說有兩種可行拆法 ( 只看 components )：
+
+### **A：三個獨立 Feature**
+
+```
+/src/features/xxx
+/src/features/xxx
+/src/features/xxx
+```
+
+---
+
+### **B：單一 Feature 收三個子區塊**
+
+```
+/src/features/xxx
+  └─ components
+      ├─ xxx.tsx
+      ├─ xxx.tsx
+      ├─ xxx.tsx
+      ├─ xxx.tsx
+      ├─ xxx.tsx
+      └─ xxx.tsx
+
+```
+
+---
+
+### 4. 定義討論
+
+### 4.1 什麼是 Feature？
+
+**Feature = 一個具備「獨立理解、獨立維護、獨立測試」能力的單位。**
+
+一個 Feature 通常具有：
+
+- 自己的 UI（View / Component）
+- 自己的邏輯（hooks）
+- 自己的狀態（store）
+- 自己的資料/型別（types）
+- 自己的 API（apis）
+
+---
+
+### 4.2 Feature Boundary 判斷準則
+
+在拆分時可依以下判斷：
+
+### **1. UI + 邏輯是否能獨立存在？**
+
+- 若能（像 xxx 在其他 page 也能用） → 拆為獨立 feature
+
+### **2. 是否共享大量 Domain Model 或 State？**
+
+- 若多個子區塊共享同一個核心（如 xxx） → 合併為單一 feature
+
+### **3. UX 上是否被視為獨立功能？**
+
+- 若在產品 Roadmap 中是不同功能 → 拆開
+- 若都屬於 xxx → 放在同 feature
+
+---
+
+### 4.3 Feature 標準目錄結構
+
+就 Follow 大家在文件上一開始訂立的 Folder 標準：
+
+```
+- some-feature
+    - apis
+    - assets
+    - components
+    - hooks
+    - contexts (? 我還是希望會有，可以讓大家思考怎麼設計 scoped component design )
+    - stores
+    - utils
+    - styles
+    - types/ or types.ts
+    - data.ts (常數)
+```
+
+---
+
+### 4.4 Feature 之間應如何溝通／共享？
+
+Feature-Based 的核心原則：
+
+> Feature 不應直接互相 import，除非是單向依賴，且邊界定義正確。
+
+必須遵守：
+
+- **不可循環依賴**
+- **不可彼此跨引用**
+    
+    若兩個 feature 似乎互相需要對方：
+    
+    - 表示 feature 邊界劃分錯誤
+    - 思考以下方式之一：
+        1. 合併成單一 feature
+        2. 抽到 shared
+
+具體而言：
+
+- A 可以 import B，但 B 不可 import A
+- 若兩個 Feature 都用到同組 UI → 移到 **root components**
+- 若兩個 Feature 都用到同個 util → 移到 **root utils**
+- 若兩個 Feature 都用到同個 type → 移到 **root types**
+- 若兩個 Feature 都用到某邏輯 → 判斷是 domain 共用還是單一 feature：
+    - 若為 generic → 移到 root utils
+    - 若為 feature 特定 → 留在該 feature
+
+---
+
+---
+
+### 5. Cross-Feature Import 方式
+
+- 只能從**實際檔案路徑 import**
+- 禁用 barrel file（避免 Vite HMR 問題、循環依賴隱藏的問題）
+- import example：
+
+```tsx
+import { xxx } from '@/features/xxx/hooks/useXxx'
+```
+
+---
+
+### 6. Page 之後的角色
+
+Pages 只負責：
+
+- Routing
+- 組裝 feature
+- 外層 layout
+
+不包含：
+
+- 商業邏輯
+- component 邏輯
+- domain state
+
+像是：
+
+```tsx
+export default function xxxPage() {
+  return <XxxContent />;
+}
+```
+
+---
+
+### 7. Reference
+
+- https://profy.dev/article/react-folder-structure
+- https://www.robinwieruch.de/react-folder-structure/
+- https://blog.stackademic.com/react-folder-file-structure-patterns-and-tips-part-1-b8e55bda446f
+- https://blog.stackademic.com/react-folder-file-structure-patterns-and-tips-part-2-43e0b1f657b4
+- https://dev.to/naserrasouli/scalable-react-projects-with-feature-based-architecture-117c
+- https://dev.to/itswillt/folder-structures-in-react-projects-3dp8?ref=dailydev
+- https://dev.to/phukon/how-i-structure-my-react-projects-1lk
+
+以上會需要大家提出會有哪裡會有問題，我們再一起討論未來調整方針 ( 專案架構調整是會需要根據專案的發展動態調整的 )，如果上述都 OK 了之後我會開始逐步搬遷，會在開始前先在頻道問各位學長姐的每一塊的進度，以及能否進行搬移，一切都以 “功能“ 進度為主，調整會以不 block 到進程為主軸來進行，感謝大家！
+
+然後搬遷完的區塊後續有功能開發的話就 follow feature-based folder 的擺放方式來調整，若在進行中有任何疑問都要提出來討論ㄛ！
